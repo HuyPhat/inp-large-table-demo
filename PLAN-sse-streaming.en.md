@@ -1,6 +1,6 @@
 # Plan: reproduce the high-frequency SSE update problem
 
-Status: **in progress**. A1 to A6 and B1 are done and verified. B2 (the `naive` variant) is written and measured, but its check failed, so the hypothesis was revised. Next: B3 (the harness).
+Status: **in progress**. A1 to A6 and B1 are done and verified. B2 (the `naive` variant) is written and measured, but its check failed, so the hypothesis was revised. B3 (the `measure-stream.mjs` harness) is done and the matrix for `naive` is measured. Next: B4 (the `raf` and `timeout` variants).
 
 English version of [PLAN-sse-streaming.md](PLAN-sse-streaming.md). If the two ever differ, treat the Vietnamese file as the original.
 
@@ -16,15 +16,26 @@ Reproduce an "update storm": the server pushes about 1,000 messages per second o
 
 Original hypothesis (**disproved by B2**): each message causes its own render, so up to 1,000 renders per second.
 
-Measured on the `naive` variant (single run, 5-second window): React already batches pending updates, so there are only 1 to 5 renders per second (each about 170 ms at 1x CPU). The problem shows up differently: back-to-back full-table renders nearly saturate the main thread, so the screen lags the server and user interactions queue behind a render.
+Measured on the `naive` variant with `scripts/measure-stream.mjs` (one run per configuration): React already batches pending updates, so there are about 10 renders per second at 1x CPU and 1 to 2 at 4x CPU, not 1,000. The problem shows up differently: back-to-back full-table renders saturate the main thread, so frames drop, the screen lags the server, and user interactions queue behind a render.
 
-| Configuration | Display latency (median) | Worst INP |
-| --- | --- | --- |
-| 1,000 msg/s, 1x CPU | about 310 ms | 184 ms (close to the 176 ms baseline at rate 0) |
-| 1,000 msg/s, 4x CPU | about 1,400 ms | 1,296 ms |
-| 5,000 msg/s, 1x CPU | about 350 ms | 240 ms |
+| Configuration | Main thread busy | FPS | Display latency p50 / p95 | Worst click | Worst key | Messages not yet shown at window end |
+| --- | --- | --- | --- | --- | --- | --- |
+| rate 0, 1x CPU (baseline) | 10% | 57 | none | 176 ms | 168 ms | 0 |
+| 1,000 msg/s, 1x CPU | 100% | 10 | 77 / 383 ms | 368 ms | 344 ms | 54 |
+| 5,000 msg/s, 1x CPU | 99% | 10 | 76 / 389 ms | 296 ms | 328 ms | 768 |
+| rate 0, 4x CPU (baseline) | 23% | 49 | none | 616 ms | 592 ms | 0 |
+| 1,000 msg/s, 4x CPU | 99% | 2 | 1,435 / 1,773 ms | 752 ms | 768 ms | 268 |
+| 5,000 msg/s, 4x CPU | 94% | 2 | 1,720 / 2,205 ms | 872 ms | 896 ms | 1,785 |
 
-Limits of these numbers: one run per configuration, no rate=0 baseline at 4x CPU yet, and it is unknown whether the latency grows over time or stays stable. The B3 harness will replace them.
+Observations:
+- The main thread is already saturated at 1,000 msg/s, even at 1x CPU (FPS drops from 57 to 10, with 21 seconds of long tasks in a 35-second window).
+- Going from 1,000 to 5,000 msg/s barely changes renders or latency, because throughput is bounded by the duration of one render. What grows is the number of messages not yet shown at the end of the window (54 to 768 at 1x, 268 to 1,785 at 4x). The server delivered the requested rates (about 1,000 and 5,010 messages per second reached the page).
+- Worst INP with a stream versus the same page without one: 368 ms versus 176 ms at 1x CPU ("needs improvement"), and about 750 to 870 ms versus 616 ms at 4x CPU ("poor").
+
+Limits of these numbers:
+- One run per configuration.
+- The interaction script changes the load mid-run: typing "acme" shrinks the table from 1,000 to about 167 rows. So `firstThirdP50` versus `lastThirdP50` (does latency grow over time?) is confounded and not usable yet. The trend over time and memory need a separate steady run with no interactions (see B7).
+- An earlier quick measurement (about a 5-second window, few interactions) showed INP close to baseline at 1x CPU. It underestimated the problem, and the table above replaces it.
 
 Revised hypothesis, to test in B4 and B6: most of the gain comes from render granularity (per-row subscription, virtualization), and the choice between rAF and `setTimeout` may matter less once each flush is cheap.
 
@@ -128,8 +139,8 @@ Method: run for 60 seconds, sample `JSHeapUsedSize` through CDP `Performance.get
 ### Part B: reproduce the streaming problem
 
 - **B1. Server-side SSE.** Check: `curl -N` counting lines over 5 seconds matches `rate`, and the same seed gives the same sequence.
-- **B2. The `mode=naive` variant.** Check: at 1,000 msg/s the INP meter goes red and the number of renders is close to the number of messages. If not, the mechanism hypothesis is wrong and must be revisited. **Result: this check failed** (see the Goal section): renders were only 1 to 5 per second, and INP went red only at 4x CPU.
-- **B3. `measure-stream.mjs`.** Check: at rate=0 the naive variant gives numbers close to `/broken` (same markup), confirming the harness does not distort results. Output is one JSON line per configuration, like `measure.mjs`.
+- **B2. The `mode=naive` variant.** Check: at 1,000 msg/s the INP meter goes red and the number of renders is close to the number of messages. If not, the mechanism hypothesis is wrong and must be revisited. **Result: this check failed** (see the Goal section): renders were about 10 per second at 1x CPU (1 to 2 at 4x), not 1,000. The rest of the hypothesis (the stream makes INP and latency worse) holds, see the table in the Goal section.
+- **B3. `measure-stream.mjs`.** Check: at rate=0 the naive variant gives numbers close to `/broken` (same markup), confirming the harness does not distort results. Output is one JSON line per configuration, like `measure.mjs`. **Result: passed** (rate 0: click 168 ms, key 128 ms, 6,553 DOM nodes, versus 168 ms, 128 ms and 6,577 nodes on `/broken`).
 - **B4. The `mode=raf` and `mode=timeout` variants**, both with `buffer=map`. Check: the same harness shows better results than the naive version.
 - **B5. Correctness check.** After the stream stops, the table state and the filter result must equal the expected state computed from the seed. Coalescing must not lose data.
 - **B6. Isolate each axis.** Turn on one change at a time (scheduling, buffer, rendering) and measure each alone, because last time we could not separate the contribution of each fix.

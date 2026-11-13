@@ -7,7 +7,8 @@
     "dev:stream": "turbo run dev --filter=stream-web --filter=stream-api",
     "build": "turbo run build",
     "start": "turbo run start",
-    "measure": "node scripts/measure.mjs"
+    "measure": "node scripts/measure.mjs",
+    "measure:stream": "node scripts/measure-stream.mjs"
   },
   "devDependencies": {
     "playwright": "^1.65.0",

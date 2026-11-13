@@ -1,6 +1,6 @@
 # Plan: tái hiện lỗi cập nhật tần suất cao qua SSE
 
-Trạng thái: **đang thực hiện**. Đã xong A1 đến A6 và B1 (đã kiểm tra). B2 (biến thể `naive`) đã viết và đo, nhưng kiểm tra của B2 không đạt nên giả thuyết đã được sửa. Tiếp theo: B3 (bộ đo).
+Trạng thái: **đang thực hiện**. Đã xong A1 đến A6 và B1 (đã kiểm tra). B2 (biến thể `naive`) đã viết và đo, nhưng kiểm tra của B2 không đạt nên giả thuyết đã được sửa. B3 (bộ đo `measure-stream.mjs`) xong và đã đo ma trận cho `naive`. Tiếp theo: B4 (biến thể `raf` và `timeout`).
 
 ## Mục tiêu
 
@@ -14,15 +14,26 @@ Tái hiện lỗi "update storm": server đẩy khoảng 1.000 message/s qua SSE
 
 Giả thuyết ban đầu (**đã bị B2 bác bỏ**): mỗi message gây một lần render, tức tới 1.000 lần render mỗi giây.
 
-Kết quả đo biến thể `naive` (một lần chạy, cửa sổ 5 giây): React đã tự gộp các cập nhật đang chờ, nên chỉ có 1 đến 5 lần render mỗi giây (mỗi lần khoảng 170 ms ở CPU 1x). Vấn đề lộ ra theo cách khác: các lần render cả bảng nối tiếp nhau làm main thread gần bão hòa, nên màn hình chậm hơn server và thao tác của người dùng phải xếp sau một lần render.
+Kết quả đo biến thể `naive` bằng `scripts/measure-stream.mjs` (một lần chạy mỗi cấu hình): React đã tự gộp các cập nhật đang chờ, nên chỉ có khoảng 10 lần render mỗi giây ở CPU 1x và 1 đến 2 lần ở CPU 4x, thay vì 1.000. Vấn đề lộ ra theo cách khác: các lần render cả bảng nối tiếp nhau làm main thread bão hòa, nên khung hình tụt, màn hình chậm hơn server và thao tác của người dùng phải xếp sau một lần render.
 
-| Cấu hình | Độ trễ hiển thị (trung vị) | INP tệ nhất |
-| --- | --- | --- |
-| 1.000 msg/s, CPU 1x | khoảng 310 ms | 184 ms (gần mức nền 176 ms ở rate 0) |
-| 1.000 msg/s, CPU 4x | khoảng 1.400 ms | 1.296 ms |
-| 5.000 msg/s, CPU 1x | khoảng 350 ms | 240 ms |
+| Cấu hình | Main thread bận | FPS | Độ trễ hiển thị p50 / p95 | Click tệ nhất | Phím tệ nhất | Message chưa hiển thị cuối cửa sổ |
+| --- | --- | --- | --- | --- | --- | --- |
+| rate 0, CPU 1x (mức nền) | 10% | 57 | không có | 176 ms | 168 ms | 0 |
+| 1.000 msg/s, CPU 1x | 100% | 10 | 77 / 383 ms | 368 ms | 344 ms | 54 |
+| 5.000 msg/s, CPU 1x | 99% | 10 | 76 / 389 ms | 296 ms | 328 ms | 768 |
+| rate 0, CPU 4x (mức nền) | 23% | 49 | không có | 616 ms | 592 ms | 0 |
+| 1.000 msg/s, CPU 4x | 99% | 2 | 1.435 / 1.773 ms | 752 ms | 768 ms | 268 |
+| 5.000 msg/s, CPU 4x | 94% | 2 | 1.720 / 2.205 ms | 872 ms | 896 ms | 1.785 |
 
-Hạn chế của các số này: mỗi cấu hình chỉ một lần chạy, chưa có mức nền rate=0 ở CPU 4x, chưa biết độ trễ có tăng dần theo thời gian hay ổn định. Bộ đo ở B3 sẽ thay thế chúng.
+Nhận xét:
+- Main thread đã bão hòa từ 1.000 msg/s, kể cả ở CPU 1x (FPS từ 57 xuống 10, 21 giây long task trong cửa sổ 35 giây).
+- Tăng rate từ 1.000 lên 5.000 gần như không đổi số lần render hay độ trễ, vì thông lượng bị giới hạn bởi thời gian một lần render. Thứ tăng lên là số message chưa kịp hiển thị cuối cửa sổ (54 lên 768 ở 1x, 268 lên 1.785 ở 4x). Server đáp ứng đúng rate yêu cầu (khoảng 1.000 và 5.010 message mỗi giây tới trang).
+- INP tệ nhất khi có stream so với cùng trang không có stream: 368 ms so với 176 ms ở CPU 1x (mức "cần cải thiện"), và khoảng 750 đến 870 ms so với 616 ms ở CPU 4x (mức "kém").
+
+Hạn chế của các số này:
+- Mỗi cấu hình chỉ một lần chạy.
+- Kịch bản thao tác làm thay đổi tải giữa chừng: gõ "acme" thu bảng từ 1.000 xuống khoảng 167 dòng. Vì vậy chỉ số `firstThirdP50` so với `lastThirdP50` (độ trễ có tăng dần không) bị nhiễu và chưa dùng được. Xu hướng theo thời gian và bộ nhớ cần một lần chạy ổn định riêng, không có thao tác (xem B7).
+- Một lần đo nhanh trước đó (cửa sổ khoảng 5 giây, ít thao tác) cho INP gần mức nền ở CPU 1x. Số đó đánh giá thấp vấn đề, bảng trên thay thế nó.
 
 Giả thuyết sửa đổi, cần kiểm chứng ở B4 và B6: phần lớn cải thiện đến từ độ chi tiết của render (subscription theo dòng, virtualization), còn việc chọn rAF hay `setTimeout` có thể ít quan trọng hơn khi mỗi lần xả đã rẻ.
 
@@ -126,8 +137,8 @@ Cách đo: chạy 60 giây, lấy mẫu `JSHeapUsedSize` qua CDP `Performance.ge
 ### Phần B: tái hiện lỗi stream
 
 - **B1. SSE phía server.** Kiểm tra: `curl -N` đếm số dòng trong 5 giây khớp với `rate`, và cùng seed cho cùng chuỗi.
-- **B2. Biến thể `mode=naive`.** Kiểm tra: ở 1.000 msg/s đồng hồ INP đỏ và số lần render gần bằng số message. Nếu không, giả thuyết cơ chế sai và cần xem lại. **Kết quả: kiểm tra này không đạt** (xem mục Mục tiêu): số lần render chỉ 1 đến 5 mỗi giây, và INP chỉ đỏ ở CPU 4x.
-- **B3. `measure-stream.mjs`.** Kiểm tra: ở rate=0 biến thể naive cho số gần với `/broken` (cùng markup), xác nhận bộ đo không làm lệch. Đầu ra là một dòng JSON mỗi cấu hình, giống `measure.mjs`.
+- **B2. Biến thể `mode=naive`.** Kiểm tra: ở 1.000 msg/s đồng hồ INP đỏ và số lần render gần bằng số message. Nếu không, giả thuyết cơ chế sai và cần xem lại. **Kết quả: kiểm tra này không đạt** (xem mục Mục tiêu): số lần render chỉ khoảng 10 mỗi giây ở CPU 1x (1 đến 2 ở CPU 4x), không phải 1.000. Phần còn lại của giả thuyết (stream làm INP và độ trễ xấu đi) thì đúng, xem bảng ở mục Mục tiêu.
+- **B3. `measure-stream.mjs`.** Kiểm tra: ở rate=0 biến thể naive cho số gần với `/broken` (cùng markup), xác nhận bộ đo không làm lệch. Đầu ra là một dòng JSON mỗi cấu hình, giống `measure.mjs`. **Kết quả: đạt** (rate 0: click 168 ms, gõ phím 128 ms, 6.553 node DOM, so với 168 ms, 128 ms, 6.577 node ở `/broken`).
 - **B4. Biến thể `mode=raf` và `mode=timeout`**, cùng `buffer=map`. Kiểm tra: cùng bộ đo cho kết quả tốt hơn bản ngây thơ.
 - **B5. Kiểm tra tính đúng đắn.** Sau khi stream dừng, trạng thái bảng và kết quả lọc phải bằng trạng thái mong đợi tính từ seed. Việc gộp cập nhật không được làm mất dữ liệu.
 - **B6. Tách từng trục.** Bật từng thay đổi một (lên lịch, bộ đệm, kiểu render) và đo riêng, vì lần trước ta không tách được đóng góp của từng cách sửa.
