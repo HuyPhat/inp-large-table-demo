@@ -1,6 +1,6 @@
 # Plan: reproduce the high-frequency SSE update problem
 
-Status: **awaiting review**. No code has been written.
+Status: **in progress**. A1 to A6 and B1 are done and verified. Next: B2 (the `naive` variant).
 
 English version of [PLAN-sse-streaming.md](PLAN-sse-streaming.md). If the two ever differ, treat the Vietnamese file as the original.
 

@@ -40,7 +40,12 @@ apps/web/app/broken   Trang chưa tối ưu
 apps/web/app/fixed    Trang đã tối ưu
 apps/web/app/shared.tsx   Cột, formatter, useRows, Toolbar, đồng hồ INP
 scripts/measure.mjs   Playwright: click và gõ thật, in kết quả Event Timing
+apps/stream-web       Thí nghiệm thứ 2 (Vite + React, cổng 5173): cập nhật bảng tần suất cao qua SSE
+apps/stream-api       API SSE cho thí nghiệm thứ 2 (NestJS, cổng 3002)
+turbo.json            Turborepo điều phối build, dev, start cho cả bốn app
 ```
+
+Thí nghiệm thứ 2 không dùng chung code với hai app đầu và đang được dựng dần, xem [PLAN-sse-streaming.md](PLAN-sse-streaming.md) (bản tiếng Anh: [PLAN-sse-streaming.en.md](PLAN-sse-streaming.en.md)). Hiện `stream-web` mới chỉ có trang trống với đồng hồ INP và `stream-api` mới chỉ có endpoint `/health`.
 
 Dữ liệu được sinh tất định khi API khởi động, nên mọi lần đo đều chạy trên cùng một tập. `pageSize` tối đa là 1.000.
 
@@ -53,6 +58,8 @@ pnpm install
 pnpm build
 pnpm start
 ```
+
+`pnpm start` tự build trước nếu cần (Turborepo cache lại kết quả) rồi chạy cả bốn app. Chỉ muốn chạy thí nghiệm thứ 2 thì dùng `pnpm dev:stream`.
 
 Mở <http://localhost:3000>, trang chủ sẽ chuyển đến `/broken`. Web dùng cổng 3000 và API dùng cổng 3001. API chỉ cho phép CORS từ `http://localhost:3000`.
 

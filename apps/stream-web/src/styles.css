@@ -1,0 +1,9 @@
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; font: 13px/1.4 system-ui, sans-serif; color: #1c2024; }
+h1 { font-size: 18px; margin: 0 0 8px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+.toolbar input { padding: 6px 8px; width: 220px; }
+.meter { font-variant-numeric: tabular-nums; padding: 6px 10px; border-radius: 6px; background: #eef1f4; }
+.meter.good { background: #d9f2e0; }
+.meter.warn { background: #fdf0c8; }
+.meter.bad { background: #fbdcdc; }

@@ -1,6 +1,6 @@
 # Plan: tái hiện lỗi cập nhật tần suất cao qua SSE
 
-Trạng thái: **chờ duyệt**, chưa có code nào được viết.
+Trạng thái: **đang thực hiện**. Đã xong A1 đến A6 và B1 (đã kiểm tra). Tiếp theo: B2 (biến thể `naive`).
 
 ## Mục tiêu
 

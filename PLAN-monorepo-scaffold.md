@@ -1,6 +1,6 @@
 # Plan: Turborepo setup and the second app (`stream-web` + `stream-api`)
 
-Status: **awaiting review**. No code has been written.
+Status: **done** (steps A1 to A6 completed and verified).
 
 This is the scaffolding half of the SSE work. The experiment itself (SSE protocol, rAF vs `setTimeout` batching, metrics) lives in [PLAN-sse-streaming.md](PLAN-sse-streaming.md), Part B. This plan only produces the empty, runnable apps that Part B fills in.
 
