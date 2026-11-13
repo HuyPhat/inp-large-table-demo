@@ -1,6 +1,6 @@
 # Plan: tái hiện lỗi cập nhật tần suất cao qua SSE
 
-Trạng thái: **đang thực hiện**. Đã xong A1 đến A6 và B1 (đã kiểm tra). Tiếp theo: B2 (biến thể `naive`).
+Trạng thái: **đang thực hiện**. Đã xong A1 đến A6 và B1 (đã kiểm tra). B2 (biến thể `naive`) đã viết và đo, nhưng kiểm tra của B2 không đạt nên giả thuyết đã được sửa. Tiếp theo: B3 (bộ đo).
 
 ## Mục tiêu
 
@@ -12,7 +12,19 @@ Tái hiện lỗi "update storm": server đẩy khoảng 1.000 message/s qua SSE
 2. Độ trễ hiển thị tăng dần so với server.
 3. Bộ nhớ tăng.
 
-Giả thuyết cơ chế: tốc độ cập nhật (1.000/s) vượt xa tốc độ màn hình hiển thị (khoảng 60/s), nhưng mỗi message ở một task riêng nên React không gộp được, dẫn đến tới 1.000 lần render mỗi giây mà chỉ khoảng 60 lần được vẽ. Giả thuyết này được kiểm chứng ở bước B2.
+Giả thuyết ban đầu (**đã bị B2 bác bỏ**): mỗi message gây một lần render, tức tới 1.000 lần render mỗi giây.
+
+Kết quả đo biến thể `naive` (một lần chạy, cửa sổ 5 giây): React đã tự gộp các cập nhật đang chờ, nên chỉ có 1 đến 5 lần render mỗi giây (mỗi lần khoảng 170 ms ở CPU 1x). Vấn đề lộ ra theo cách khác: các lần render cả bảng nối tiếp nhau làm main thread gần bão hòa, nên màn hình chậm hơn server và thao tác của người dùng phải xếp sau một lần render.
+
+| Cấu hình | Độ trễ hiển thị (trung vị) | INP tệ nhất |
+| --- | --- | --- |
+| 1.000 msg/s, CPU 1x | khoảng 310 ms | 184 ms (gần mức nền 176 ms ở rate 0) |
+| 1.000 msg/s, CPU 4x | khoảng 1.400 ms | 1.296 ms |
+| 5.000 msg/s, CPU 1x | khoảng 350 ms | 240 ms |
+
+Hạn chế của các số này: mỗi cấu hình chỉ một lần chạy, chưa có mức nền rate=0 ở CPU 4x, chưa biết độ trễ có tăng dần theo thời gian hay ổn định. Bộ đo ở B3 sẽ thay thế chúng.
+
+Giả thuyết sửa đổi, cần kiểm chứng ở B4 và B6: phần lớn cải thiện đến từ độ chi tiết của render (subscription theo dòng, virtualization), còn việc chọn rAF hay `setTimeout` có thể ít quan trọng hơn khi mỗi lần xả đã rẻ.
 
 ## Quyết định đã chốt
 
@@ -114,7 +126,7 @@ Cách đo: chạy 60 giây, lấy mẫu `JSHeapUsedSize` qua CDP `Performance.ge
 ### Phần B: tái hiện lỗi stream
 
 - **B1. SSE phía server.** Kiểm tra: `curl -N` đếm số dòng trong 5 giây khớp với `rate`, và cùng seed cho cùng chuỗi.
-- **B2. Biến thể `mode=naive`.** Kiểm tra: ở 1.000 msg/s đồng hồ INP đỏ và số lần render gần bằng số message. Nếu không, giả thuyết cơ chế sai và cần xem lại.
+- **B2. Biến thể `mode=naive`.** Kiểm tra: ở 1.000 msg/s đồng hồ INP đỏ và số lần render gần bằng số message. Nếu không, giả thuyết cơ chế sai và cần xem lại. **Kết quả: kiểm tra này không đạt** (xem mục Mục tiêu): số lần render chỉ 1 đến 5 mỗi giây, và INP chỉ đỏ ở CPU 4x.
 - **B3. `measure-stream.mjs`.** Kiểm tra: ở rate=0 biến thể naive cho số gần với `/broken` (cùng markup), xác nhận bộ đo không làm lệch. Đầu ra là một dòng JSON mỗi cấu hình, giống `measure.mjs`.
 - **B4. Biến thể `mode=raf` và `mode=timeout`**, cùng `buffer=map`. Kiểm tra: cùng bộ đo cho kết quả tốt hơn bản ngây thơ.
 - **B5. Kiểm tra tính đúng đắn.** Sau khi stream dừng, trạng thái bảng và kết quả lọc phải bằng trạng thái mong đợi tính từ seed. Việc gộp cập nhật không được làm mất dữ liệu.

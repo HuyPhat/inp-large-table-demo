@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { Observable } from 'rxjs';
-import { makeGenerator } from './data';
+import { LOADED, makeGenerator, rows } from './data';
 
 const MAX_RATE = 20_000;
 const TICK_MS = 10;
@@ -21,6 +21,12 @@ class StreamController {
   @Get('health')
   health() {
     return { ok: true };
+  }
+
+  /** Snapshot the client loads before the stream starts (state at seq 0). */
+  @Get('rows')
+  rows() {
+    return { items: rows, total: LOADED };
   }
 
   /**

@@ -1,6 +1,6 @@
 # Plan: reproduce the high-frequency SSE update problem
 
-Status: **in progress**. A1 to A6 and B1 are done and verified. Next: B2 (the `naive` variant).
+Status: **in progress**. A1 to A6 and B1 are done and verified. B2 (the `naive` variant) is written and measured, but its check failed, so the hypothesis was revised. Next: B3 (the harness).
 
 English version of [PLAN-sse-streaming.md](PLAN-sse-streaming.md). If the two ever differ, treat the Vietnamese file as the original.
 
@@ -14,7 +14,19 @@ Reproduce an "update storm": the server pushes about 1,000 messages per second o
 2. Display latency that grows over time relative to the server.
 3. Growing memory.
 
-Hypothesis for the mechanism: the update rate (1,000/s) far exceeds the display rate (about 60/s), but every message arrives in its own task, so React cannot reliably batch them. That could mean up to 1,000 renders per second while only about 60 are ever painted. This hypothesis is tested in step B2.
+Original hypothesis (**disproved by B2**): each message causes its own render, so up to 1,000 renders per second.
+
+Measured on the `naive` variant (single run, 5-second window): React already batches pending updates, so there are only 1 to 5 renders per second (each about 170 ms at 1x CPU). The problem shows up differently: back-to-back full-table renders nearly saturate the main thread, so the screen lags the server and user interactions queue behind a render.
+
+| Configuration | Display latency (median) | Worst INP |
+| --- | --- | --- |
+| 1,000 msg/s, 1x CPU | about 310 ms | 184 ms (close to the 176 ms baseline at rate 0) |
+| 1,000 msg/s, 4x CPU | about 1,400 ms | 1,296 ms |
+| 5,000 msg/s, 1x CPU | about 350 ms | 240 ms |
+
+Limits of these numbers: one run per configuration, no rate=0 baseline at 4x CPU yet, and it is unknown whether the latency grows over time or stays stable. The B3 harness will replace them.
+
+Revised hypothesis, to test in B4 and B6: most of the gain comes from render granularity (per-row subscription, virtualization), and the choice between rAF and `setTimeout` may matter less once each flush is cheap.
 
 ## Decisions already made
 
@@ -116,7 +128,7 @@ Method: run for 60 seconds, sample `JSHeapUsedSize` through CDP `Performance.get
 ### Part B: reproduce the streaming problem
 
 - **B1. Server-side SSE.** Check: `curl -N` counting lines over 5 seconds matches `rate`, and the same seed gives the same sequence.
-- **B2. The `mode=naive` variant.** Check: at 1,000 msg/s the INP meter goes red and the number of renders is close to the number of messages. If not, the mechanism hypothesis is wrong and must be revisited.
+- **B2. The `mode=naive` variant.** Check: at 1,000 msg/s the INP meter goes red and the number of renders is close to the number of messages. If not, the mechanism hypothesis is wrong and must be revisited. **Result: this check failed** (see the Goal section): renders were only 1 to 5 per second, and INP went red only at 4x CPU.
 - **B3. `measure-stream.mjs`.** Check: at rate=0 the naive variant gives numbers close to `/broken` (same markup), confirming the harness does not distort results. Output is one JSON line per configuration, like `measure.mjs`.
 - **B4. The `mode=raf` and `mode=timeout` variants**, both with `buffer=map`. Check: the same harness shows better results than the naive version.
 - **B5. Correctness check.** After the stream stops, the table state and the filter result must equal the expected state computed from the seed. Coalescing must not lose data.
